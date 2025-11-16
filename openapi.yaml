@@ -1,0 +1,46 @@
+openapi: 3.0.0
+info:
+  title: Appointments API
+  version: 1.0.0
+  description: API for managing medical appointments
+servers:
+  - url: https://c4kjptbtie.execute-api.us-east-1.amazonaws.com/dev
+paths:
+  /appointments:
+    post:
+      summary: Create a new appointment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentInput"
+      responses:
+        "200":
+          description: Appointment successfully created
+    get:
+      summary: Retrieve appointments by insuredId
+      parameters:
+        - in: query
+          name: insuredId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of appointments
+components:
+  schemas:
+    AppointmentInput:
+      type: object
+      properties:
+        insuredId:
+          type: string
+          description: Unique identifier of the insured person (5-digit string)
+        scheduleId:
+          type: integer
+          description: Identifier of the schedule associated with the appointment
+        countryISO:
+          type: string
+          description: ISO country code (PE for Peru, CL for Chile)
+          enum: [PE, CL]

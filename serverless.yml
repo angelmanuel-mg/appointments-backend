@@ -1,0 +1,113 @@
+service: my-appointments-backend
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${env:AWS_REGION}
+  deploymentBucket:
+    name: ${env:DEPLOYMENT_BUCKET}
+  stage: ${env:STAGE}
+  environment:
+    DYNAMO_TABLE: ${env:DYNAMO_TABLE}
+    DB_HOST: ${env:DB_HOST}
+    DB_USER: ${env:DB_USER}
+    DB_PASSWORD: ${env:DB_PASSWORD}
+    DB_NAME: ${env:DB_NAME}
+    SNS_TOPIC_ARN: ${env:SNS_TOPIC_ARN}
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:GetItem
+        - dynamodb:Query
+        - dynamodb:Scan
+        - sns:Publish
+      Resource:
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMO_TABLE}
+        - ${env:SNS_TOPIC_ARN}
+
+functions:
+  appointment:
+    handler: dist/handlers/appointments.handler
+    events:
+      - http:
+          path: appointments
+          method: post
+      - http:
+          path: appointments/{insuredId}
+          method: get
+  appointment_pe:
+    handler: dist/handlers/appointment_pe.handler
+    events:
+      - sqs:
+          arn: !GetAtt SQSPE.Arn
+
+  appointment_cl:
+    handler: dist/handlers/appointment_cl.handler
+    events:
+      - sqs:
+          arn: !GetAtt SQSCL.Arn
+
+plugins:
+  - serverless-offline
+  # - serverless-webpack
+
+resources:
+  Resources:
+    ### DynamoDB ###
+    AppointmentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMO_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: insuredId
+            AttributeType: S
+          - AttributeName: scheduleId
+            AttributeType: N
+        KeySchema:
+          - AttributeName: insuredId
+            KeyType: HASH
+          - AttributeName: scheduleId
+            KeyType: RANGE
+
+    ### SNS ###
+    AppointmentTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${env:SNS_TOPIC_NAME}
+
+    ### SQS ###
+    SQSPE:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${env:SQS_PE_NAME}
+
+    SQSCL:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${env:SQS_CL_NAME}
+
+    ### SNS → SQS ###
+    SNSSubscriptionPE:
+      Type: AWS::SNS::Subscription
+      Properties:
+        Protocol: sqs
+        TopicArn: ${env:SNS_TOPIC_ARN}
+        Endpoint: !GetAtt SQSPE.Arn
+        FilterPolicy:
+          countryISO:
+            - PE
+
+    SNSSubscriptionCL:
+      Type: AWS::SNS::Subscription
+      Properties:
+        Protocol: sqs
+        TopicArn: ${env:SNS_TOPIC_ARN}
+        Endpoint: !GetAtt SQSCL.Arn
+        FilterPolicy:
+          countryISO:
+            - CL
