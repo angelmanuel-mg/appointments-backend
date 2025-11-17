@@ -15,6 +15,7 @@
   "description": "",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.932.0",
+    "@aws-sdk/client-eventbridge": "^3.932.0",
     "@aws-sdk/client-sns": "^3.932.0",
     "@aws-sdk/lib-dynamodb": "^3.932.0",
     "mysql2": "^3.15.3",

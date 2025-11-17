@@ -20,31 +20,63 @@ export class RDSService {
    * Save a new PE appointment
    */
   static async savePE(appointment: Appointment) {
-    await this.pool.execute(
-      "INSERT INTO appointment_pe (insuredId, scheduleId, countryISO, status, createdAt) VALUES (?, ?, ?, ?, ?)",
-      [
-        appointment.insuredId,
-        appointment.scheduleId,
-        appointment.countryISO,
-        appointment.status,
-        appointment.createdAt,
-      ]
-    );
+    const createdAt = new Date().toISOString();
+    const status = "pending";
+    try {
+      await this.pool.execute(
+        `INSERT INTO appointment_pe
+      (insuredId, scheduleId, countryISO, status, createdAt)
+      VALUES (?, ?, ?, ?, ?)`,
+        [
+          appointment.insuredId,
+          appointment.scheduleId,
+          appointment.countryISO,
+          status,
+          createdAt,
+        ]
+      );
+      return true;
+    } catch (error: any) {
+      console.error("[Error] savePE failed:", error);
+      if (error.code === "ER_DUP_ENTRY") {
+        console.warn(
+          `Duplicate detected → insuredId=${appointment.insuredId}, scheduleId=${appointment.scheduleId}`
+        );
+        return false;
+      }
+      throw error;
+    }
   }
 
   /*
    * Save a new CL appointment
    */
   static async saveCL(appointment: Appointment) {
-    await this.pool.execute(
-      "INSERT INTO appointment_cl (insuredId, scheduleId, countryISO, status, createdAt) VALUES (?, ?, ?, ?, ?)",
-      [
-        appointment.insuredId,
-        appointment.scheduleId,
-        appointment.countryISO,
-        appointment.status,
-        appointment.createdAt,
-      ]
-    );
+    const createdAt = new Date().toISOString();
+    const status = "pending";
+
+    try {
+      await this.pool.execute(
+        `INSERT INTO appointment_cl
+      (insuredId, scheduleId, countryISO, status, createdAt)
+      VALUES (?, ?, ?, ?, ?)`,
+        [
+          appointment.insuredId,
+          appointment.scheduleId,
+          appointment.countryISO,
+          status,
+          createdAt,
+        ]
+      );
+      return true;
+    } catch (error: any) {
+      if (error.code === "ER_DUP_ENTRY") {
+        console.warn(
+          `Duplicate detected → insuredId=${appointment.insuredId}, scheduleId=${appointment.scheduleId}`
+        );
+        return false;
+      }
+      throw error;
+    }
   }
 }

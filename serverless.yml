@@ -14,7 +14,9 @@ provider:
     DB_USER: ${env:DB_USER}
     DB_PASSWORD: ${env:DB_PASSWORD}
     DB_NAME: ${env:DB_NAME}
-    SNS_TOPIC_ARN: ${env:SNS_TOPIC_ARN}
+    SNS_TOPIC_ARN: !Ref AppointmentTopic
+    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME}
+    SQS_FINAL_NAME: ${env:SQS_FINAL_NAME}
 
   iamRoleStatements:
     - Effect: Allow
@@ -25,9 +27,11 @@ provider:
         - dynamodb:Query
         - dynamodb:Scan
         - sns:Publish
+        - events:PutEvents
       Resource:
-        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMO_TABLE}
-        - ${env:SNS_TOPIC_ARN}
+        - arn:aws:dynamodb:${env:AWS_REGION}:${aws:accountId}:table/${env:DYNAMO_TABLE}
+        - !Ref AppointmentTopic
+        - arn:aws:events:${env:AWS_REGION}:${aws:accountId}:event-bus/${env:EVENT_BUS_NAME}
 
 functions:
   appointment:
@@ -39,25 +43,43 @@ functions:
       - http:
           path: appointments/{insuredId}
           method: get
+
   appointment_pe:
     handler: dist/handlers/appointment_pe.handler
+    timeout: 15
     events:
       - sqs:
           arn: !GetAtt SQSPE.Arn
+          batchSize: 1
 
   appointment_cl:
     handler: dist/handlers/appointment_cl.handler
+    timeout: 15
     events:
       - sqs:
           arn: !GetAtt SQSCL.Arn
+          batchSize: 1
+
+  appointment_update:
+    handler: dist/handlers/appointment_update.handler
+    timeout: 15
+    events:
+      - sqs:
+          arn: !GetAtt FinalUpdateQueue.Arn
+          batchSize: 1
 
 plugins:
   - serverless-offline
-  # - serverless-webpack
 
 resources:
   Resources:
-    ### DynamoDB ###
+    # EventBridge bus
+    AppointmentsBus:
+      Type: AWS::Events::EventBus
+      Properties:
+        Name: ${env:EVENT_BUS_NAME}
+
+    # DynamoDB
     AppointmentsTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -74,29 +96,104 @@ resources:
           - AttributeName: scheduleId
             KeyType: RANGE
 
-    ### SNS ###
+    # SNS
     AppointmentTopic:
       Type: AWS::SNS::Topic
       Properties:
         TopicName: ${env:SNS_TOPIC_NAME}
 
-    ### SQS ###
+    # SQS
     SQSPE:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${env:SQS_PE_NAME}
+        VisibilityTimeout: 30
 
     SQSCL:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${env:SQS_CL_NAME}
+        VisibilityTimeout: 30
 
-    ### SNS → SQS ###
+    FinalUpdateQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${env:SQS_FINAL_NAME}
+        VisibilityTimeout: 30
+
+    # SNS → SQS policies
+    SQSPEPolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues:
+          - !Ref SQSPE
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: sns.amazonaws.com
+              Action: sqs:SendMessage
+              Resource: !GetAtt SQSPE.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: !Ref AppointmentTopic
+
+    SQSCLPolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues:
+          - !Ref SQSCL
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: sns.amazonaws.com
+              Action: sqs:SendMessage
+              Resource: !GetAtt SQSCL.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: !Ref AppointmentTopic
+
+    # EventBridge rule → FinalUpdateQueue
+    AppointmentProcessedRule:
+      Type: AWS::Events::Rule
+      Properties:
+        EventBusName: !Ref AppointmentsBus
+        EventPattern:
+          source:
+            - "appointments.pe"
+            - "appointments.cl"
+          detail-type:
+            - "appointment.processed"
+        Targets:
+          - Arn: !GetAtt FinalUpdateQueue.Arn
+            Id: FinalUpdateTarget
+
+    FinalQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues:
+          - !Ref FinalUpdateQueue
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: events.amazonaws.com
+              Action: sqs:SendMessage
+              Resource: !GetAtt FinalUpdateQueue.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: !GetAtt AppointmentProcessedRule.Arn
+
+    # SNS subscriptions with filter
     SNSSubscriptionPE:
       Type: AWS::SNS::Subscription
       Properties:
         Protocol: sqs
-        TopicArn: ${env:SNS_TOPIC_ARN}
+        TopicArn: !Ref AppointmentTopic
         Endpoint: !GetAtt SQSPE.Arn
         FilterPolicy:
           countryISO:
@@ -106,7 +203,7 @@ resources:
       Type: AWS::SNS::Subscription
       Properties:
         Protocol: sqs
-        TopicArn: ${env:SNS_TOPIC_ARN}
+        TopicArn: !Ref AppointmentTopic
         Endpoint: !GetAtt SQSCL.Arn
         FilterPolicy:
           countryISO:
