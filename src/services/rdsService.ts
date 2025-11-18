@@ -1,82 +1,95 @@
 /*
  * src/services/rdsService.ts
  * Service for persisting appointments into RDS (MySQL).
+ *
+ * Provides methods for saving, retrieving, and updating appointments in
+ * RDS table
  */
 import mysql from "mysql2/promise";
 import { Appointment } from "../models/appointment";
 
 export class RDSService {
-  // MySQL connection
-  private static pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 5,
-  });
-
   /*
    * Save a new PE appointment
+   *
+   * Inserts a new PE appointment record into the `appointment_pe` table
    */
-  static async savePE(appointment: Appointment) {
-    const createdAt = new Date().toISOString();
-    const status = "pending";
+  static async savePE(
+    a: Appointment
+  ): Promise<{ success: boolean; duplicate: boolean }> {
+    const conn = await mysql.createConnection({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+    });
+
     try {
-      await this.pool.execute(
+      await conn.execute(
         `INSERT INTO appointment_pe
-      (insuredId, scheduleId, countryISO, status, createdAt)
-      VALUES (?, ?, ?, ?, ?)`,
+        (insuredId, scheduleId, countryISO, status, createdAt)
+        VALUES (?, ?, ?, ?, ?)`,
         [
-          appointment.insuredId,
-          appointment.scheduleId,
-          appointment.countryISO,
-          status,
-          createdAt,
+          a.insuredId,
+          a.scheduleId,
+          a.countryISO,
+          "pending",
+          new Date().toISOString(),
         ]
       );
-      return true;
-    } catch (error: any) {
-      console.error("[Error] savePE failed:", error);
-      if (error.code === "ER_DUP_ENTRY") {
-        console.warn(
-          `Duplicate detected → insuredId=${appointment.insuredId}, scheduleId=${appointment.scheduleId}`
-        );
-        return false;
+
+      return { success: true, duplicate: false };
+    } catch (err: any) {
+      if (err.code === "ER_DUP_ENTRY") {
+        console.warn("Duplicate →", a.insuredId, a.scheduleId);
+        return { success: true, duplicate: true };
       }
-      throw error;
+
+      throw err;
+    } finally {
+      await conn.end();
     }
   }
 
   /*
    * Save a new CL appointment
+   *
+   * Inserts a new CL appointment record into the `appointment_cl` table
    */
-  static async saveCL(appointment: Appointment) {
-    const createdAt = new Date().toISOString();
-    const status = "pending";
+  static async saveCL(
+    a: Appointment
+  ): Promise<{ success: boolean; duplicate: boolean }> {
+    const conn = await mysql.createConnection({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_NAME,
+    });
 
     try {
-      await this.pool.execute(
+      await conn.execute(
         `INSERT INTO appointment_cl
-      (insuredId, scheduleId, countryISO, status, createdAt)
-      VALUES (?, ?, ?, ?, ?)`,
+       (insuredId, scheduleId, countryISO, status, createdAt)
+       VALUES (?, ?, ?, ?, ?)`,
         [
-          appointment.insuredId,
-          appointment.scheduleId,
-          appointment.countryISO,
-          status,
-          createdAt,
+          a.insuredId,
+          a.scheduleId,
+          a.countryISO,
+          "pending",
+          new Date().toISOString(),
         ]
       );
-      return true;
-    } catch (error: any) {
-      if (error.code === "ER_DUP_ENTRY") {
-        console.warn(
-          `Duplicate detected → insuredId=${appointment.insuredId}, scheduleId=${appointment.scheduleId}`
-        );
-        return false;
+
+      return { success: true, duplicate: false };
+    } catch (err: any) {
+      if (err.code === "ER_DUP_ENTRY") {
+        console.warn("Duplicate →", a.insuredId, a.scheduleId);
+        return { success: true, duplicate: true };
       }
-      throw error;
+
+      throw err;
+    } finally {
+      await conn.end();
     }
   }
 }

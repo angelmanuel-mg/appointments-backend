@@ -1,9 +1,10 @@
-/*
- * src/handlers/appointment-cl.ts
- * Lambda handler for processing medical appointments in Chile (CL).
+/* src/handlers/appointment-cl.ts
+ * Lambda handler for processing medical appointments in Chile (CL)
+ *
+ * Consumes messages from SQS_CL and saves them to RDS, then publishes
+ * an event to EventBridge to update the final status of the appointment
  */
-
-import { SQSEvent } from "aws-lambda";
+import { SQSEvent, Context } from "aws-lambda";
 import { RDSService } from "../services/rdsService";
 import { Appointment } from "../models/appointment";
 
@@ -12,29 +13,42 @@ import {
   PutEventsCommand,
 } from "@aws-sdk/client-eventbridge";
 
-const eventBridge = new EventBridgeClient({ region: process.env.AWS_REGION });
+const eventBridge = new EventBridgeClient({
+  region: process.env.AWS_REGION,
+});
 
-export const handler = async (event: SQSEvent) => {
+/*
+ * Lambda handler for processing medical appointments in Chile (CL)
+ */
+export const handler = async (event: SQSEvent, context: Context) => {
+  context.callbackWaitsForEmptyEventLoop = false;
+
   try {
     for (const record of event.Records) {
-      console.log("Raw SQS body:", record.body);
+      console.log("Raw SQS body: ", record.body);
 
+      // Parse SNS envelope
       const snsEnvelope = JSON.parse(record.body);
+
+      // Parse appointment payload
       const appointment: Appointment = JSON.parse(snsEnvelope.Message);
+      console.log("Parsed appointment:", appointment);
 
-      appointment.status = "pending";
-      appointment.createdAt = new Date().toISOString();
+      // Save to RDS CL
+      const result = await RDSService.saveCL(appointment);
+      console.log("[Debug] RDSService.saveCL returned:", result);
 
-      console.log("Parsed appointment (CL):", appointment);
-
-      const inserted = await RDSService.saveCL(appointment);
-
-      if (inserted) {
-        console.log("Appointment saved in RDS_CL:", appointment);
-      } else {
-        console.log("Appointment already exists in RDS_CL:", appointment);
+      if (result.duplicate) {
+        console.log("Duplicate → skipping EventBridge publish.");
+        continue;
       }
 
+      // Publish processed event to EventBridge
+      console.log("EventBridgeClient config:", eventBridge.config);
+      console.log("Sending to EventBridge with:", {
+        bus: process.env.EVENT_BUS_NAME,
+        fullArn: `arn:aws:events:${process.env.AWS_REGION}:698928391255:event-bus/${process.env.EVENT_BUS_NAME}`,
+      });
       const eventResult = await eventBridge.send(
         new PutEventsCommand({
           Entries: [
@@ -59,11 +73,10 @@ export const handler = async (event: SQSEvent) => {
         console.info("EventBridge publish OK", { eventId: entry.EventId });
       } else {
         console.warn("EventBridge publish failed", { entry });
-        throw new Error("PutEvents failed");
       }
     }
 
-    return { message: "Appointments processed successfully for CL" };
+    return { ok: true };
   } catch (error) {
     console.error("Error processing CL appointments:", error);
     throw error;

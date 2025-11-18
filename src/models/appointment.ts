@@ -1,6 +1,10 @@
 /*
  * src/models/appointment.ts
  * Data models for medical appointment scheduling
+ *
+ * Structures used across the backend:
+ * - AppointmentInput: payload received from client requests
+ * - Appointment: full entity persisted in DynamoDB and RDS
  */
 
 /*

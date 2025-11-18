@@ -6,23 +6,40 @@
 import { AppointmentsService } from "../services/appointmentsService";
 import { DynamoRepository } from "../repositories/dynamoRepository";
 import { SNSService } from "../services/snsService";
-import { AppointmentInput } from "../models/appointment";
 
 jest.mock("../repositories/dynamoRepository");
 jest.mock("../services/snsService");
 
 describe("AppointmentsService", () => {
-  it("creates appointment, saves to Dynamo, and publishes to SNS", async () => {
-    const service = new AppointmentsService();
-    const input: AppointmentInput = {
-      insuredId: "123",
-      scheduleId: 456,
-      countryISO: "PE",
+  const service = new AppointmentsService();
+
+  it("should create a new appointment with status pending", async () => {
+    const input = {
+      insuredId: "12345",
+      scheduleId: 101,
+      countryISO: "PE" as const,
     };
     const result = await service.createAppointment(input);
 
     expect(result.status).toBe("pending");
     expect(DynamoRepository.prototype.save).toHaveBeenCalledWith(result);
     expect(SNSService.publish).toHaveBeenCalledWith(result);
+  });
+
+  it("should get appointments by insuredId", async () => {
+    const mockAppointments = [
+      {
+        insuredId: "12345",
+        scheduleId: 101,
+        countryISO: "PE",
+        status: "pending",
+      },
+    ];
+    (DynamoRepository.prototype.getByInsured as jest.Mock).mockResolvedValue(
+      mockAppointments
+    );
+
+    const result = await service.getAppointmentsByInsured("12345");
+    expect(result).toEqual(mockAppointments);
   });
 });

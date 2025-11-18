@@ -3,30 +3,25 @@
  * Unit tests for SNSService.
  */
 import { SNSService } from "../services/snsService";
-import { SNSClient } from "@aws-sdk/client-sns";
 import { Appointment } from "../models/appointment";
 
-jest.mock("@aws-sdk/client-sns", () => {
-  return {
-    SNSClient: jest.fn(() => ({
-      send: jest.fn().mockResolvedValue({ MessageId: "123" }),
-    })),
-    PublishCommand: jest.fn(),
-  };
-});
-
 describe("SNSService", () => {
-  it("publishes appointment to SNS with correct attributes", async () => {
+  it("should publish message to SNS", async () => {
+    const mockClient = {
+      send: jest.fn().mockResolvedValue({ MessageId: "abc123" }),
+    };
+    (SNSService as any).client = mockClient;
+
     const appointment: Appointment = {
-      insuredId: "123",
-      scheduleId: 456,
-      countryISO: "PE",
+      insuredId: "12345",
+      scheduleId: 101,
+      countryISO: "PE" as const,
       status: "pending",
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-
     await SNSService.publish(appointment);
 
-    expect(SNSClient).toHaveBeenCalled();
+    expect(mockClient.send).toHaveBeenCalled();
   });
 });

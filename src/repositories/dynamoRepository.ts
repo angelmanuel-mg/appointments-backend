@@ -1,6 +1,9 @@
 /*
  * src/repositories/dynamoRepository.ts
  * Repository class for interaction with DynamoDB
+ *
+ * Provides methods for saving, retrieving, and updating appointments in
+ * DynamoDB table
  */
 
 import { PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
@@ -8,11 +11,14 @@ import { dynamo } from "../config/awsConfig";
 import { Appointment } from "../models/appointment";
 
 export class DynamoRepository {
-  // DynamoDB table name
+  /* DynamoDB table name (from env or default). */
   private tableName = process.env.DYNAMO_TABLE || "AppointmentsTable";
 
   /*
    * Save a new appointment
+   *
+   * Inserts a new appointment record into DynamoDB
+   * Fails if an appointment with the same insuredId and scheduleId already exists
    */
   async save(appointment: Appointment): Promise<void> {
     try {
@@ -32,6 +38,8 @@ export class DynamoRepository {
 
   /*
    * Get all appointments by insuredId
+   *
+   * Retrieves all appointments with the specified insuredId
    */
   async getByInsured(insuredId: string): Promise<Appointment[]> {
     try {
@@ -53,6 +61,9 @@ export class DynamoRepository {
 
   /*
    * Update appointment status
+   *
+   * Updates the status of an appointment of an existing appointment
+   * Require that the appointment exists in DynamoDB
    */
   async updateStatus(
     insuredId: string,

@@ -1,34 +1,55 @@
-/* src/handlers/appointment-pe.ts * Lambda handler for processing medical appointments in Peru (PE). */
-import { SQSEvent } from "aws-lambda";
+/*
+ * src/handlers/appointment-pe.ts
+ * Lambda handler for processing medical appointments in Peru (PE)
+ *
+ * Consumes messages from SQS_PE and saves them to RDS, then publishes
+ * an event to EventBridge to update the final status of the appointment
+ */
+import { SQSEvent, Context } from "aws-lambda";
 import { RDSService } from "../services/rdsService";
 import { Appointment } from "../models/appointment";
+
 import {
   EventBridgeClient,
   PutEventsCommand,
 } from "@aws-sdk/client-eventbridge";
-const eventBridge = new EventBridgeClient({});
-export const handler = async (event: SQSEvent) => {
+
+const eventBridge = new EventBridgeClient({
+  region: process.env.AWS_REGION,
+});
+
+/*
+ * Lambda handler for processing medical appointments in Peru (PE)
+ */
+export const handler = async (event: SQSEvent, context: Context) => {
+  context.callbackWaitsForEmptyEventLoop = false;
+
   try {
     for (const record of event.Records) {
-      // Raw SNS in SQS body
       console.log("Raw SQS body: ", record.body);
-      // Parse SNS wrapper
+
+      // Parse SNS envelope
       const snsEnvelope = JSON.parse(record.body);
-      // Parse appointment from SQS message
+
+      // Parse appointment payload
       const appointment: Appointment = JSON.parse(snsEnvelope.Message);
-      // Add status and createdAt
-      appointment.status = "pending";
-      appointment.createdAt = new Date().toISOString();
       console.log("Parsed appointment:", appointment);
-      console.log("[Debug] Callling RDSService.savePE");
-      // Save to RDS
-      const inserted = await RDSService.savePE(appointment);
-      console.log("[Debug] RDSService.savePE returned:", inserted);
-      if (inserted) {
-        console.log("Appointment saved in RDS_PE:", appointment);
-      } else {
-        console.log("Appointment already exists in RDS_PE:", appointment);
+
+      // Save to RDS PE
+      const result = await RDSService.savePE(appointment);
+      console.log("[Debug] RDSService.savePE returned:", result);
+
+      if (result.duplicate) {
+        console.log("Duplicate → skipping EventBridge publish.");
+        continue;
       }
+
+      // Publish processed event to EventBridge
+      console.log("EventBridgeClient config:", eventBridge.config);
+      console.log("Sending to EventBridge with:", {
+        bus: process.env.EVENT_BUS_NAME,
+        fullArn: `arn:aws:events:${process.env.AWS_REGION}:698928391255:event-bus/${process.env.EVENT_BUS_NAME}`,
+      });
       const eventResult = await eventBridge.send(
         new PutEventsCommand({
           Entries: [
@@ -47,6 +68,7 @@ export const handler = async (event: SQSEvent) => {
           ],
         })
       );
+
       const entry = eventResult.Entries?.[0];
       if (entry?.EventId) {
         console.info("EventBridge publish OK", { eventId: entry.EventId });
@@ -54,10 +76,10 @@ export const handler = async (event: SQSEvent) => {
         console.warn("EventBridge publish failed", { entry });
       }
     }
-    // Return success message
-    return { message: "Appointments processed successfully for PE" };
+
+    return { ok: true };
   } catch (error) {
-    // Log error and rethrow
     console.error("Error processing PE appointments:", error);
+    throw error;
   }
 };

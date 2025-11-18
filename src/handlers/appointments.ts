@@ -1,14 +1,15 @@
 /*
  * src/handlers/appointments.ts
  * Lambda handler for POST and GET /appointments endpoints
+ *
+ * Handles:
+ * - POST /appointments: creates a new appointment
+ * - GET /appointments/{insuredId}: lists appointments by insuredId
  */
 
 import { APIGatewayProxyHandler } from "aws-lambda";
 import { AppointmentsService } from "../services/appointmentsService";
 import { validateAppointmentInput } from "../utils/validation";
-import AWS from "@aws-sdk/client-sns";
-
-const sns = new AWS.SNS();
 
 const service = new AppointmentsService();
 
@@ -34,32 +35,17 @@ export const handler: APIGatewayProxyHandler = async (event) => {
       }
 
       validateAppointmentInput(body);
-      try {
-        // Save in DynamoDB
-        const created = await service.createAppointment(body);
 
-        // Publish to SNS
-        await sns.publish({
-          TopicArn: process.env.SNS_TOPIC_ARN,
-          Message: JSON.stringify(body),
-          MessageAttributes: {
-            countryISO: {
-              DataType: "String",
-              StringValue: body.countryISO,
-            },
-          },
-        });
+      // Create appointment (DynamoDB + SNS)
+      const created = await service.createAppointment(body);
 
-        return {
-          statusCode: 201,
-          body: JSON.stringify({
-            message: "Appointment created successfully",
-            data: created,
-          }),
-        };
-      } catch (error: any) {
-        throw error;
-      }
+      return {
+        statusCode: 201,
+        body: JSON.stringify({
+          message: "Appointment created successfully",
+          data: created,
+        }),
+      };
     }
 
     //  GET / List appointments by insuredId
@@ -72,8 +58,7 @@ export const handler: APIGatewayProxyHandler = async (event) => {
         };
       }
 
-      const appointments =
-        await new AppointmentsService().getAppointmentsByInsured(insuredId);
+      const appointments = await service.getAppointmentsByInsured(insuredId);
 
       return {
         statusCode: 200,

@@ -1,6 +1,8 @@
 /*
  * src/services/appointmentsService.ts
  * Service layer for managing medical appointments.
+ *
+ * Provides methods to create new appointments and retrieve existing appointments
  */
 
 import { AppointmentInput, Appointment } from "../models/appointment";
